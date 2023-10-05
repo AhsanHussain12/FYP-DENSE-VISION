@@ -101,7 +101,7 @@ class CSRNet(pl.LightningModule):
         return {'abs_diff': abs_diff}
     
     def test_epoch_end(self, outputs):
-        mae = torch.stack(outputs).mean()
+        mae = torch.stack([x['abs_diff'] for x in outputs]).mean()
         self.log('test_mae', mae)
         return mae
     
