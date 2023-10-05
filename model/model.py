@@ -1,6 +1,6 @@
-from typing import Any, Optional
+from typing import Any, List, Optional, Union
 import pytorch_lightning as pl
-from pytorch_lightning.utilities.types import STEP_OUTPUT
+from pytorch_lightning.utilities.types import EPOCH_OUTPUT, STEP_OUTPUT
 from torchvision import models
 import torch.nn as nn
 import torch.nn.functional as F
@@ -76,31 +76,38 @@ class CSRNet(pl.LightningModule):
             in_channels = filters
         return nn.Sequential(*layers)
 
-    def configure_optimizers(self):
-        optimizer = torch.optim.SGD(self.parameters(), lr=self.learning_rate, momentum=0.95, weight_decay=5*1e-4)
-        return optimizer
-
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
-        loss = self.loss(y_hat, y)
+        loss = self.loss(y_hat, y.unsqueeze(1))
         self.log('train_loss', loss)
         return loss
     
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
-        loss = self.loss(y_hat, y)
-        self.log('val_loss', loss)
-        return loss
+        abs_diff = torch.abs(y_hat.sum() - y.sum())
+        return {'abs_diff': abs_diff}
     
+    def validation_epoch_end(self, outputs):
+        mae = torch.stack([x['abs_diff'] for x in outputs]).mean()
+        self.log('val_mae', mae)
+        return mae
+
     def test_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
-        loss = self.loss(y_hat, y)
-        self.log('test_loss', loss)
-        return loss
+        abs_diff = torch.abs(y_hat.sum() - y.sum())
+        return {'abs_diff': abs_diff}
     
+    def test_epoch_end(self, outputs):
+        mae = torch.stack(outputs).mean()
+        self.log('test_mae', mae)
+        return mae
+    
+    def configure_optimizers(self):
+        optimizer = torch.optim.SGD(self.parameters(), lr=self.learning_rate, momentum=0.95, weight_decay=5*1e-4)
+        return optimizer
 
         
 

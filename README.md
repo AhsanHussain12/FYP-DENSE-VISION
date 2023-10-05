@@ -16,16 +16,16 @@ CUDA: 11.7
 
 ## Ground Truth
 
-> Working on getting the code for generating ground truth work. If you have the density maps ready, you can skip this part.
+An example of how to generate the density maps can be found in the `density_map_generation.py` file. 
 
 ## Training Process
 
-Try `python train.py train.json val.json 0 0` to start training process.
+Run `python train.py` to start training process.
 
-## Validation
+## Testing
 
 ```bash
-python test.py
+python test.py --model [path to model] 
 ```
 
 ## Results

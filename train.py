@@ -1,79 +1,109 @@
-import pytorch_lightning as pl
-import cv2
-import h5py
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 import torch
-import torch.nn as nn
-from PIL import Image
-from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
-from tqdm import tqdm
 
 from model.model import CSRNet
-from utils.dataset import Sha, collate_fn
+import Config as cfg
+import dataset
+import json
+
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint,RichProgressBar
+from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.callbacks.progress.rich_progress import RichProgressBarTheme
 
 
 def main():
+    # Create an instance of the model
+    model = CSRNet(learning_rate=cfg.learning_rate)
+
+    # ================== Data ==================
+
+    # Read json files containing image paths for training and validation
+    with open (cfg.train_json) as f:
+        train_list = json.load(f)
+
+    with open (cfg.val_json) as f:
+        val_list = json.load(f)
+
+    # Create dataloaders
+    train_dataset = dataset.listDataset(train_list,
+                                        shuffle=True,
+                                        transform=transforms.Compose([
+                                            transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                                                        std=[0.229, 0.224, 0.225]),
+                                        ]),
+                                        train=True,
+                                        batch_size=cfg.batch_size,
+                                        num_workers=cfg.num_workers)
+
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        # collate_fn=train_dataset.collate_fn,
+        batch_size=cfg.batch_size,
+        shuffle=True,
+        num_workers=cfg.num_workers,
+        pin_memory=True)
     
-    # DataLoader creation
-    # Assuming images and density_maps are lists of numpy arrays
-    image_files = ['Shanghai/part_A_final/train_data/images/IMG_132.jpg',
-    'Shanghai/part_A_final/train_data/images/IMG_83.jpg',
-    'Shanghai/part_A_final/train_data/images/IMG_248.jpg',
-    'Shanghai/part_A_final/train_data/images/IMG_281.jpg',
-    'Shanghai/part_A_final/train_data/images/IMG_170.jpg',
-    'Shanghai/part_A_final/train_data/images/IMG_230.jpg',
-    'Shanghai/part_A_final/train_data/images/IMG_41.jpg',
-    'Shanghai/part_A_final/train_data/images/IMG_263.jpg',
-    'Shanghai/part_A_final/train_data/images/IMG_154.jpg',
-    'Shanghai/part_A_final/train_data/images/IMG_124.jpg']
-    density_map_files = [f.replace('images', 'densities').replace('jpg','h5') for f in image_files]
-
-
-    images = [Image.open(img_file).convert('RGB') for img_file in image_files]
-    density_maps = [h5py.File(dm_file, 'r') for dm_file in density_map_files]
-    density_maps = [np.asarray(density_map['density']) for density_map in density_maps]
-    ref_number = 1200
-
-    train_transforms = transforms.Compose([
-      transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                            std=[0.229, 0.224, 0.225]),
-                            transforms.RandomHorizontalFlip(),
-                            transforms.RandomVerticalFlip(),
-    ])
-
-    dataset = Sha(images, density_maps, ref_number, transform=train_transforms)
-
-    train_dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=0, collate_fn=collate_fn)
-
-
-
-    model = CSRNet(learning_rate=1e-7)
-
-
-    checkpoint_callback = pl.callbacks.ModelCheckpoint(
-        monitor='train_loss',
-        filename='model-{epoch:02d}-{val_loss:.2f}',
+    val_dataset = dataset.listDataset(val_list,
+                                        shuffle=False,
+                                        transform=transforms.Compose([
+                                            transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                                                        std=[0.229, 0.224, 0.225]),
+                                        ]),
+                                        train=False,
+                                        batch_size=cfg.batch_size,
+                                        num_workers=cfg.num_workers)
+    
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset,
+        batch_size=cfg.batch_size,
+        shuffle=False,
+        num_workers=cfg.num_workers,
+        pin_memory=True)
+    
+    print(f"Length of training dataset: {len(train_dataset)}")
+    print(f"Length of validation dataset: {len(val_dataset)}")
+    
+    # ================== Training ==================
+    
+    # Callbacks for logging and checkpointing
+    checkpoint_callback = ModelCheckpoint(
+        monitor='val_mae',
         save_top_k=1,
-        mode='min',
-        verbose=True
-    )
+        mode='min')
+    
+    wandb_logger = WandbLogger(project='CSRNet-Light')
+
+    # A custom theme progress bar
+    progress_bar = RichProgressBar(
+        theme=RichProgressBarTheme(
+        description="green_yellow",
+        progress_bar="green1",
+        progress_bar_finished="green1",
+        progress_bar_pulse="#6206E0",
+        batch_progress="green_yellow",
+        time="grey82",
+        processing_speed="grey82",
+        metrics="grey82",
+    ))
 
     # create a trainer
     trainer = pl.Trainer(
         accelerator='auto',
-        max_epochs=100,
-        callbacks=[checkpoint_callback],
-
-    )
+        max_epochs=cfg.num_epochs,
+        callbacks=[checkpoint_callback, progress_bar],
+        logger=wandb_logger)
 
     # train the model
-    trainer.fit(model, train_dataloaders=train_dataloader,val_dataloaders=train_dataloader)
+    trainer.fit(model, train_loader, val_loader)
 
 
+    print(f"Training completed.")
 
-    
+    trainer.test(model,dataloaders=val_loader)
+
+                                      
+
+
 if __name__ == '__main__':
     main()

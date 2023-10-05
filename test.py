@@ -15,53 +15,62 @@ import os
 
 from model.model import CSRNet
 from utils.dataset import Sha, collate_fn
+import json
+import dataset
+import Config as cfg
+import image
+from argparse import ArgumentParser
 
-test_dir = 'Shanghai/part_A_final/test_data/'
+import pytorch_lightning as pl
 
-# Load images and corresponding density maps
-test_image_files = sorted(glob.glob(os.path.join(test_dir,'images', '*.jpg')))
-test_density_map_files = sorted(glob.glob(os.path.join(test_dir,'densities', '*.h5')))
+def parse_args():
+    parser = ArgumentParser()
+    parser.add_argument('--model', type=str, help='Path to the model')
 
-print(f"Lenght of test images: {len(test_image_files)}")
-print(f"Lenght of test density maps: {len(test_density_map_files)}")
+    return parser.parse_args()
 
-# create a dataset
-test_images = [Image.open(img_file).convert('RGB') for img_file in test_image_files]
-test_density_maps = [h5py.File(dm_file, 'r') for dm_file in test_density_map_files]
-test_density_maps = [np.asarray(density_map['density']) for density_map in test_density_maps]
+def test(args):
 
-test_transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                            std=[0.229, 0.224, 0.225]),
-])
+    # ================== Data ==================
+    with open(cfg.val_json) as f:
+        val_list = json.load(f)
 
-mae = 0
-loss = nn.L1Loss()
+    val_dataset = dataset.listDataset(val_list,
+                                        shuffle=False,
+                                        transform=transforms.Compose([
+                                            transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                                                        std=[0.229, 0.224, 0.225]),
+                                        ]),
+                                        train=False,
+                                        batch_size=cfg.batch_size,
+                                        num_workers=cfg.num_workers)
+    
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset,
+        batch_size=cfg.batch_size,
+        shuffle=False,
+        num_workers=cfg.num_workers,
+        pin_memory=True)
+    
+    # ================== Model ==================
+    model = CSRNet.load_from_checkpoint(args.model, learning_rate=cfg.learning_rate)
+    model.eval()
 
-model = CSRNet(learning_rate=1e-7)
-model.load_from_checkpoint('lightning_logs/version_0/checkpoints/model-epoch=56-val_loss=6.23.ckpt', learning_rate=1e-7)
+    # ================== Test ==================
+    mae = 0
 
-model.eval()
-
-
-for i in tqdm(range(len(test_images))):
-    test_image = test_images[i]
-    test_density_map = test_density_maps[i]
-    test_image = test_transform(test_image).unsqueeze(0)
-    # resize the density map to 1/8 the size of the original image
-    test_density_map = cv2.resize(test_density_map, (int(test_image.shape[3]/8), int(test_image.shape[2]/8))) * 64
-    pred_density_map = model(test_image).squeeze().detach().numpy()
-
-    # get the total number of people in the image
-    pred_count = np.sum(pred_density_map)
-    gt_count = np.sum(test_density_map)
-
-    # calculate the MAE
-    mae+=abs(gt_count - pred_count)
+    with torch.no_grad():
+        for i, (img, target) in tqdm(enumerate(val_loader), colour='green', desc='Testing', total=len(val_loader)):
+            output = model(img)
+            mae += abs(output.sum().item() - target.sum().item())
+    
+    # Test results
+    print(f"----- Test results -----")
+    print(f"MAE: {mae / len(val_dataset)}")
 
 
 
-# print the final MAE in a pretty formatted table
-print(f"-----\nFinal MAE: {mae/len(test_images)}\n-----")
 
+if __name__ == '__main__':
+    args = parse_args()
+    test(args)
