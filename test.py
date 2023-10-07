@@ -1,25 +1,14 @@
-import pytorch_lightning as pl
-import cv2
-import h5py
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 import torch
-import torch.nn as nn
-from PIL import Image
-from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 from tqdm import tqdm
 import glob as glob
-import os
 
 from model.model import CSRNet
-from utils.dataset import Sha, collate_fn
 import json
 import dataset
 import Config as cfg
-import image
 from argparse import ArgumentParser
+from rich.progress import track
 
 import pytorch_lightning as pl
 
@@ -32,7 +21,7 @@ def parse_args():
 def test(args):
 
     # ================== Data ==================
-    with open(cfg.val_json) as f:
+    with open(cfg.test_json) as f:
         val_list = json.load(f)
 
     val_dataset = dataset.listDataset(val_list,
@@ -60,7 +49,7 @@ def test(args):
     mae = 0
 
     with torch.no_grad():
-        for i, (img, target) in tqdm(enumerate(val_loader), colour='green', desc='Testing', total=len(val_loader)):
+        for i, (img, target) in track(enumerate(val_loader), total=len(val_loader)):
             output = model(img)
             mae += abs(output.sum().item() - target.sum().item())
     

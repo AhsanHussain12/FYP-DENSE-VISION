@@ -107,6 +107,7 @@ class CSRNet(pl.LightningModule):
     
     def configure_optimizers(self):
         optimizer = torch.optim.SGD(self.parameters(), lr=self.learning_rate, momentum=0.95, weight_decay=5*1e-4)
+
         return optimizer
 
         
