@@ -91,9 +91,11 @@ def main():
     
     # Callbacks for logging and checkpointing
     checkpoint_callback = ModelCheckpoint(
+        dirpath=cfg.checkpoint_dir,  # Set this to your desired checkpoint directory
         monitor='val_mae',
         save_top_k=1,
-        mode='min')
+        mode='min'
+    )
     
     wandb_logger = WandbLogger(project='CSRNet-Light')
 
@@ -109,16 +111,25 @@ def main():
         processing_speed="grey82",
         metrics="grey82",
     ))
+    
+    #get latest checkpoint
+    latest_ckpt = cfg.get_latest_checkpoint(cfg.checkpoint_dir)
 
-    # create a trainer
+    # Setup trainer without resume_from_checkpoint
     trainer = pl.Trainer(
         accelerator='auto',
         max_epochs=cfg.num_epochs,
         callbacks=[checkpoint_callback, progress_bar],
-        logger=wandb_logger)
+        logger=wandb_logger
+    )
 
-    # train the model
-    trainer.fit(model, train_loader, val_loader)
+    # Train the model with checkpoint if available
+    if latest_ckpt:
+        print(f"Resuming training from checkpoint: {latest_ckpt}")
+        trainer.fit(model, train_loader, val_loader, ckpt_path=latest_ckpt)  # Use ckpt_path here
+    else:
+        print("Starting training from scratch.")
+        trainer.fit(model, train_loader, val_loader)
 
 
     print(f"Training completed.")
