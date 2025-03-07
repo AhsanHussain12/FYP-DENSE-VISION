@@ -1,154 +1,181 @@
 # import os
 # os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-
+# import time
 # import torch
 # from torchvision import transforms
 # from model.model import CSRNet
 # import Config as cfg
 # from argparse import ArgumentParser
 # from rich.progress import track
-# import matplotlib.pyplot as plt
-# import numpy as np
+# import cv2  # Import OpenCV
 # from PIL import Image
-# import glob
 
-# class ImageDataset(torch.utils.data.Dataset):
-#     def __init__(self, image_dir, transform=None):
-#         self.image_paths = glob.glob(f"{image_dir}/*.jpg")  # Update the extension if images are different
-#         self.transform = transform
-
-#     def __len__(self):
-#         return len(self.image_paths)
-
-#     def __getitem__(self, idx):
-#         img_path = self.image_paths[idx]
-#         img = Image.open(img_path).convert("RGB")  # Open the image as RGB
-
-#         if self.transform:
-#             img = self.transform(img)
-
-#         return img, img_path  # Return the image and its path
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # def parse_args():
 #     parser = ArgumentParser()
 #     parser.add_argument('--model', type=str, help='Path to the model')
-#     parser.add_argument('--image_dir', type=str, help='Directory with images for visualization')
-#     parser.add_argument('--output_dir', type=str, default='outputs/', help='Directory to save visualizations')
-
+#     parser.add_argument('--video_path', type=str, help='Path to the input video')
 #     return parser.parse_args()
 
-# def visualize(args):
-
-#     # ================== Data ==================
-#     val_dataset = ImageDataset(image_dir=args.image_dir,
-#                                transform=transforms.Compose([
-#                                    transforms.ToTensor(), 
-#                                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-#                                ]))
-
-#     val_loader = torch.utils.data.DataLoader(
-#         val_dataset,
-#         batch_size=1,  # Visualize one image at a time
-#         shuffle=False
-#     )
-
+# def visualize_video(args):
 #     # ================== Model ==================
-#     model = CSRNet.load_from_checkpoint(args.model, learning_rate=cfg.learning_rate)
+#     model = CSRNet.load_from_checkpoint(args.model, learning_rate=cfg.learning_rate).to(device)
 #     model.eval()
 
-#     # ================== Visualization ==================
+#     # Open the video file
+#     cap = cv2.VideoCapture(args.video_path)
+#     if not cap.isOpened():
+#         print("Error: Could not open video.")
+#         return
+
+#     # Transformation for input frames
+#     transform = transforms.Compose([
+#         transforms.ToTensor(),
+#         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+#     ])
+
+#     # ================== Frame Processing ==================
 #     with torch.no_grad():
-#         for i, (img, img_path) in track(enumerate(val_loader), total=len(val_loader)):
-#             output = model(img)
-#             density_map = output.squeeze().cpu().numpy()  # Remove extra dimensions
+#         while True:
+#             ret, frame = cap.read()
+#             if not ret:
+#                 break
+
+#             # Convert frame to PIL image and apply transformations
+#             img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+#             img = transform(img).unsqueeze(0).to(device)  # Add batch dimension   
+
+#             # Forward pass through the model
+#             %%time output = model(img)
+#             density_map = output.squeeze().cpu().numpy()
 #             estimated_count = density_map.sum()
 
-#             # Plot the input image and its density map
-#             fig, axs = plt.subplots(1, 2, figsize=(12, 6))
-#             axs[0].imshow(img.squeeze().permute(1, 2, 0).cpu().numpy())  # Display input image
-#             axs[0].set_title("Input Image")
-#             axs[1].imshow(density_map, cmap='jet')  # Display density map
-#             axs[1].set_title(f"Predicted Density Map\nEstimated Count: {estimated_count:.2f}")
-#             plt.show()
+#             # Display the count on the frame
+#             cv2.putText(frame, f"Estimated Count: {estimated_count:.2f}", (10, 30),
+#                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-#             # Save the visualization if needed
-#             output_path = f"{args.output_dir}/density_map_{i}.png"
-#             plt.savefig(output_path)
-#             print(f"Saved visualization to {output_path}")
-#             plt.close(fig)
+#             # Show the processed frame
+#             cv2.imshow("Video Frame", frame)
+
+#             # Break the loop on 'q' key press
+#             if cv2.waitKey(1) & 0xFF == ord('q'):
+#                 break
+
+#     # Release resources
+#     cap.release()
+#     cv2.destroyAllWindows()
 
 # if __name__ == '__main__':
 #     args = parse_args()
-#     visualize(args)
-
+#     print(device)
+#     visualize_video(args)
 
 
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
+import time
 import torch
+import cv2
+import numpy as np
 from torchvision import transforms
 from model.model import CSRNet
 import Config as cfg
 from argparse import ArgumentParser
-from rich.progress import track
-import cv2  # Import OpenCV
 from PIL import Image
+
+class VideoVisualizer:
+    def __init__(self, model_path, video_path, device=None):
+        # Select device (GPU if available, else CPU)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu") if device is None else device
+        print(f"Using device: {self.device}")
+
+        # Load the model
+        self.model = CSRNet.load_from_checkpoint(model_path, learning_rate=cfg.learning_rate).to(self.device)
+        self.model.eval()
+
+        # Open video file
+        self.cap = cv2.VideoCapture(video_path)
+        if not self.cap.isOpened():
+            raise ValueError("Error: Could not open video.")
+
+        # Image transformations
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+    def visualize(self):
+        frame_count = 0
+        total_time = 0
+
+        with torch.no_grad():
+            while True:
+                ret, frame = self.cap.read()
+                if not ret:
+                    break
+
+                # Convert frame to PIL image and apply transformations
+                img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                img = self.transform(img).unsqueeze(0).to(self.device)  # Add batch dimension   
+
+                # Measure inference time
+                start_time = time.time()
+                output = self.model(img)
+                end_time = time.time()
+
+                # Compute FPS
+                inference_time = end_time - start_time
+                fps = 1 / inference_time if inference_time > 0 else 0
+                total_time += inference_time
+                frame_count += 1
+
+                # Process model output
+                density_map = output.squeeze().cpu().numpy()
+                estimated_count = density_map.sum()
+
+                # Normalize density map for visualization
+                density_map = (density_map - density_map.min()) / (density_map.max() - density_map.min() + 1e-5)  # Avoid div by zero
+                density_map = (density_map * 255).astype(np.uint8)  # Scale to 0-255
+                density_map = cv2.applyColorMap(density_map, cv2.COLORMAP_JET)  # Apply colormap
+
+                # Resize density map to match video frame size
+                density_map = cv2.resize(density_map, (frame.shape[1], frame.shape[0]))
+
+                # Display estimated count & FPS on frame
+                cv2.putText(frame, f"Estimated Count: {estimated_count:.2f}", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                cv2.putText(frame, f"FPS: {fps:.2f}", (10, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+                # Concatenate frame & density map side by side
+                combined_display = np.hstack((frame, density_map))
+
+                # Show combined output
+                cv2.imshow("Video + Density Map", combined_display)
+
+                # Break on 'q' key press
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+
+        # Calculate and display average FPS
+        avg_fps = frame_count / total_time if total_time > 0 else 0
+        print(f"Average FPS: {avg_fps:.2f}")
+
+        # Release resources
+        self.cap.release()
+        cv2.destroyAllWindows()
+
 
 def parse_args():
     parser = ArgumentParser()
-    parser.add_argument('--model', type=str, help='Path to the model')
-    parser.add_argument('--video_path', type=str, help='Path to the input video')
+    parser.add_argument('--model', type=str, required=True, help='Path to the model')
+    parser.add_argument('--video_path', type=str, required=True, help='Path to the input video')
     return parser.parse_args()
 
-def visualize_video(args):
-    # ================== Model ==================
-    model = CSRNet.load_from_checkpoint(args.model, learning_rate=cfg.learning_rate)
-    model.eval()
-
-    # Open the video file
-    cap = cv2.VideoCapture(args.video_path)
-    if not cap.isOpened():
-        print("Error: Could not open video.")
-        return
-
-    # Transformation for input frames
-    transform = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
-
-    # ================== Frame Processing ==================
-    with torch.no_grad():
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            # Convert frame to PIL image and apply transformations
-            img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-            img = transform(img).unsqueeze(0)  # Add batch dimension
-
-            # Forward pass through the model
-            output = model(img)
-            density_map = output.squeeze().cpu().numpy()
-            estimated_count = density_map.sum()
-
-            # Display the count on the frame
-            cv2.putText(frame, f"Estimated Count: {estimated_count:.2f}", (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-            # Show the processed frame
-            cv2.imshow("Video Frame", frame)
-
-            # Break the loop on 'q' key press
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
-    # Release resources
-    cap.release()
-    cv2.destroyAllWindows()
 
 if __name__ == '__main__':
     args = parse_args()
-    visualize_video(args)
+    visualizer = VideoVisualizer(args.model, args.video_path)
+    visualizer.visualize()
