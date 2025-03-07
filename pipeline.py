@@ -2,15 +2,15 @@ import cv2
 import numpy as np
 import threading
 import time
-import torch
+# import torch
 import tkinter as tk
 from tkinter import Label, Frame
-from torchvision import transforms
+# from torchvision import transforms
 from PIL import Image, ImageTk
 
 # Load CSRNet Model (Assuming model is already trained and loaded)
-model = torch.load("csrnet_model.pth", map_location=torch.device("cpu"))
-model.eval()  # Set model to evaluation mode
+# model = torch.load("csrnet_model.pth", map_location=torch.device("cpu"))
+# model.eval()  # Set model to evaluation mode
 
 cap = cv2.VideoCapture("C:\\Users\\DELL\\Desktop\\FYP\\video.mp4")
 global_frame = None  # Shared variable for latest frame
