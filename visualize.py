@@ -1,3 +1,77 @@
+# import os
+# os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+# import time
+# import torch
+# from torchvision import transforms
+# from model.model import CSRNet
+# import Config as cfg
+# from argparse import ArgumentParser
+# from rich.progress import track
+# import cv2  # Import OpenCV
+# from PIL import Image
+
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# def parse_args():
+#     parser = ArgumentParser()
+#     parser.add_argument('--model', type=str, help='Path to the model')
+#     parser.add_argument('--video_path', type=str, help='Path to the input video')
+#     return parser.parse_args()
+
+# def visualize_video(args):
+#     # ================== Model ==================
+#     model = CSRNet.load_from_checkpoint(args.model, learning_rate=cfg.learning_rate).to(device)
+#     model.eval()
+
+#     # Open the video file
+#     cap = cv2.VideoCapture(args.video_path)
+#     if not cap.isOpened():
+#         print("Error: Could not open video.")
+#         return
+
+#     # Transformation for input frames
+#     transform = transforms.Compose([
+#         transforms.ToTensor(),
+#         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+#     ])
+
+#     # ================== Frame Processing ==================
+#     with torch.no_grad():
+#         while True:
+#             ret, frame = cap.read()
+#             if not ret:
+#                 break
+
+#             # Convert frame to PIL image and apply transformations
+#             img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+#             img = transform(img).unsqueeze(0).to(device)  # Add batch dimension   
+
+#             # Forward pass through the model
+#             %%time output = model(img)
+#             density_map = output.squeeze().cpu().numpy()
+#             estimated_count = density_map.sum()
+
+#             # Display the count on the frame
+#             cv2.putText(frame, f"Estimated Count: {estimated_count:.2f}", (10, 30),
+#                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+#             # Show the processed frame
+#             cv2.imshow("Video Frame", frame)
+
+#             # Break the loop on 'q' key press
+#             if cv2.waitKey(1) & 0xFF == ord('q'):
+#                 break
+
+#     # Release resources
+#     cap.release()
+#     cv2.destroyAllWindows()
+
+# if __name__ == '__main__':
+#     args = parse_args()
+#     print(device)
+#     visualize_video(args)
+
+
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 

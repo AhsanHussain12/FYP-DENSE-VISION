@@ -51,7 +51,6 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
-
 # ===================== Video Display =====================
 def update_video():
     global global_frame
@@ -101,8 +100,10 @@ def process_frames():
 # ===================== Start Threads =====================
 if __name__ == "__main__":
     video_thread = threading.Thread(target=update_video, daemon=True)
-    count_thread = threading.Thread(target=process_frames, daemon=True)    
+    count_thread = threading.Thread(target=process_frames, daemon=True)
+    
     video_thread.start()
     count_thread.start()
+    
     root.mainloop()
     cap.release()
